@@ -264,7 +264,7 @@ void control_update()
                     
                     break;
                 }
-                case 1: // left/riht thruster tilt
+                case 1: // left/right thruster tilt
                 {
                     uint16_t angle = rc_input[chan];
                     angle = constrain(angle, rc_input_min[chan], rc_input_max[chan]);
@@ -298,14 +298,19 @@ void control_update()
                     
                     throttle = round(throttle_avg / (float)THROTTLE_RC_FILTER_COUNT);
                     
-                    Serial.print("Set throttle to: ");
-                    Serial.println(throttle);
-                    
                     for (int esc_chan = 0; esc_chan < 4; esc_chan++) {
                         PulseRadio.outputCh(esc_chan, throttle);
                         servo_output[esc_chan] = throttle;
                     }
                     
+                    break;
+                }
+                case 3: // yaw
+                {
+                    break;
+                }
+                case 4: // switch
+                {
                     break;
                 }
             }
