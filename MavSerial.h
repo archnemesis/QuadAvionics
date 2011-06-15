@@ -10,11 +10,11 @@ mavlink_status_t mavlink_status;
 static inline void comm_send_ch(mavlink_channel_t chan, uint8_t ch)
 {
   if (chan == MAVLINK_COMM_0) {
-    Serial.write(ch);
+    Serial1.write(ch);
   }
   
   if (chan == MAVLINK_COMM_1) {
-    Serial1.write(ch);
+    Serial2.write(ch);
   }
 }
 

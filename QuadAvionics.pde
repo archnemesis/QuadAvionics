@@ -1,8 +1,7 @@
-#include <Servo.h>
-
 #define MAVLINK_USE_CONVENIENCE_FUNCTIONS
 
 #include "Defines.h"
+#include "PulseRadio.h"
 #include "MavSerial.h"
 #include <mavlink.h>
 
@@ -12,6 +11,16 @@ struct _system_info_t {
     uint8_t     mode;
     uint8_t     nav_mode;
     uint8_t     state;
+    
+    float       batt1_voltage;
+    float       batt2_voltage;
+    float       batt3_voltage;
+    float       batt4_voltage;
+    
+    float       batt1_charge;
+    float       batt2_charge;
+    float       batt3_charge;
+    float       batt4_charge;
 } system_info;
 
 struct _loop_counters_t {
@@ -29,30 +38,23 @@ struct _telemetry_settings_t {
     bool            sys_status;
 } telemetry_settings;
 
-typedef struct _control_output_t {
-    uint16_t        esc1;
-    uint16_t        esc2;
-    uint16_t        esc3;
-    uint16_t        esc4;
-    uint16_t        tilt1;
-    uint16_t        tilt2;
-    uint16_t        tilt3;
-    uint16_t        tilt4;
-} control_output_t;
+uint16_t rc_input_min[8];
+uint16_t rc_input_max[8];
+uint16_t rc_input[8];
 
-control_output_t control_output;
+uint16_t servo_output[8];
 
 //
 // outputs for main rotor speed controllers
 //
-Servo esc1;
-Servo esc2;
-Servo esc3;
-Servo esc4;
+//Servo esc_servo[4];
+//Servo tilt_servo[4];
 
 void setup()
 {
-    Serial.begin(115200);
+    Serial.begin(9600);
+    Serial1.begin(38400);
+    
     Serial.println("Beginning setup sequence...");
     
     mavlink_system.sysid            = 100;
@@ -72,26 +74,28 @@ void setup()
     loop_counters.medium_counter    = 0;
     loop_counters.onehz_counter     = 0;
     
-    control_output.esc1 = ESC_THROTTLE_MIN;
-    control_output.esc2 = ESC_THROTTLE_MIN;
-    control_output.esc3 = ESC_THROTTLE_MIN;
-    control_output.esc4 = ESC_THROTTLE_MIN;
-
-    esc1.attach(ESC_OUTPUT_1);
-    esc2.attach(ESC_OUTPUT_2);
-    esc3.attach(ESC_OUTPUT_3);
-    esc4.attach(ESC_OUTPUT_4);
-
-    esc1.writeMicroseconds(ESC_THROTTLE_MIN);
-    esc2.writeMicroseconds(ESC_THROTTLE_MIN);
-    esc3.writeMicroseconds(ESC_THROTTLE_MIN);
-    esc4.writeMicroseconds(ESC_THROTTLE_MIN);
+    servo_output[0] = 1000;
+    servo_output[1] = 1000;
+    servo_output[2] = 1000;
+    servo_output[3] = 1000;
+    servo_output[4] = 1500;
+    servo_output[5] = 1500;
+    servo_output[6] = 1500;
+    servo_output[7] = 1500;
+    
+    PulseRadio.init();
+    
+    for (int i = 0; i < 8; i++) {
+        PulseRadio.outputCh(i, servo_output[i]);
+    }
     
     system_info.state = MAV_STATE_STANDBY;
+    system_info.mode = MAV_MODE_LOCKED;
 }
 
 void loop()
 {
+    
     if (millis() - loop_counters.fast_timer > 19) {
         loop_counters.fast_delta = (millis() - loop_counters.fast_timer);
         system_info.load = (float)(loop_counters.fast_timestamp - loop_counters.fast_timer) / loop_counters.fast_delta;
@@ -116,14 +120,15 @@ void loop()
  */
 void fast_loop()
 {
+    
     //
     // Check for incoming commands or data
     //
     
     static mavlink_message_t msg;
     
-    while (Serial.available() > 0) {
-        uint8_t c = Serial.read();
+    while (Serial1.available() > 0) {
+        uint8_t c = Serial1.read();
         
         if (mavlink_parse_char(MAVLINK_COMM_0, c, &msg, &mavlink_status)) {
             mavlink_dispatch(msg);
@@ -138,26 +143,48 @@ void medium_loop()
 {
     switch (loop_counters.medium_counter) {
         case 0:
+        {
             loop_counters.medium_counter++;
             
-            mavlink_msg_servo_output_raw_send(
-                MAVLINK_COMM_0,
-                control_output.esc1,
-                control_output.esc2,
-                control_output.esc3,
-                control_output.esc4,
-                0,
-                0,
-                0,
-                0
-            );
+            //mavlink_msg_servo_output_raw_send(
+            //    MAVLINK_COMM_0,
+            //    control_output.esc1,
+            //    control_output.esc2,
+            //    control_output.esc3,
+            //    control_output.esc4,
+            //    0,
+            //    0,
+            //    0,
+            //    0
+            //);
+            
+            int b1_analog = analogRead(0);
+            float b1_volt_raw = (((b1_analog / 1024.0f) * 5.0f) / 0.06369f) * 1000.0f;
+            
+            b1_analog = analogRead(1);
+            float bi_current_raw = (((b1_analog / 1024.0f) * 5.0f) / 0.03660f) * 1000.0f;
+            
+            Serial.println(bi_current_raw / 1000);
+            
+            system_info.batt1_voltage = int(b1_volt_raw);
+            system_info.batt1_charge = map(b1_volt_raw, 8100, 12690, 0, 100);
             
             break;
-            
+        }    
         case 1:
-            loop_counters.medium_counter = 0;
+            loop_counters.medium_counter++;
 
             control_update();
+            
+            break;
+        case 2:
+            loop_counters.medium_counter = 0;
+            
+            if (PulseRadio.ready()) {
+                for (int i = 0; i < 8; i++) {
+                    rc_input[i] = PulseRadio.inputCh(i);
+                }
+            }
             
             break;
     }
@@ -168,37 +195,121 @@ void medium_loop()
  */
 void one_second_loop()
 {
-    mavlink_msg_heartbeat_send(MAVLINK_COMM_0, MAV_QUADROTOR, MAV_AUTOPILOT_GENERIC);
-    mavlink_msg_sys_status_send(
-        MAVLINK_COMM_0, 
-        system_info.mode, 
-        system_info.nav_mode,
-        system_info.state,
-        system_info.load,
-        12, 100,
-        system_info.packet_loss
-    );
+    //
+    // wait for XBee to warm up before transmitting...
+    //
+
+    if (millis() > 5000) {
+        mavlink_msg_heartbeat_send(MAVLINK_COMM_0, MAV_QUADROTOR, MAV_AUTOPILOT_GENERIC);
+        mavlink_msg_sys_status_send(
+            MAVLINK_COMM_0, 
+            system_info.mode, 
+            system_info.nav_mode,
+            system_info.state,
+            system_info.load,
+            system_info.batt1_voltage, 
+            system_info.batt1_charge,
+            system_info.packet_loss
+        );
+        mavlink_msg_servo_output_raw_send(
+            MAVLINK_COMM_0,
+            servo_output[0],
+            servo_output[1],
+            servo_output[2],
+            servo_output[3],
+            servo_output[4],
+            servo_output[5],
+            servo_output[6],
+            servo_output[7]
+        );
+        mavlink_msg_rc_channels_raw_send(
+            MAVLINK_COMM_0,
+            rc_input[0],
+            rc_input[1],
+            rc_input[2],
+            rc_input[3],
+            rc_input[4],
+            rc_input[5],
+            rc_input[6],
+            rc_input[7],
+            0
+        );
+    }
 }
 
 void control_update()
 {
-    static control_output_t last_output;
+    static uint16_t throttle_stab[THROTTLE_RC_FILTER_COUNT];
+    static uint8_t throttle_stab_counter = 0;
     
-    esc1.writeMicroseconds(control_output.esc1);
-    esc2.writeMicroseconds(control_output.esc2);
-    esc3.writeMicroseconds(control_output.esc3);
-    esc4.writeMicroseconds(control_output.esc4);
-
-    if (last_output.esc1 != control_output.esc1 ||
-        last_output.esc2 != control_output.esc2 ||
-        last_output.esc3 != control_output.esc3 ||
-        last_output.esc4 != control_output.esc4) 
-    {
-        // do stuff here with change in servo position
-        
-        last_output = control_output;
+    if (system_info.mode == MAV_MODE_MANUAL) {
+        for (int chan = 0; chan < 8; chan++) {
+            switch (chan) {
+                case 0: // forward/aft thruster tilt
+                {
+                    uint16_t angle = rc_input[chan];
+                    angle = constrain(angle, 1260, 1800);
+                    angle = map(angle, 1260, 1800, 1000, 2000);
+                    
+                    PulseRadio.outputCh(4, angle);
+                    PulseRadio.outputCh(5, angle);
+                    servo_output[4] = angle;
+                    servo_output[5] = angle;
+                    
+                    break;
+                }
+                case 1: // left/riht thruster tilt
+                {
+                    uint16_t angle = rc_input[chan];
+                    angle = constrain(angle, 1160, 1900);
+                    angle = map(angle, 1160, 1900, 1000, 2000);
+                    
+                    PulseRadio.outputCh(6, angle);
+                    PulseRadio.outputCh(7, angle);
+                    servo_output[6] = angle;
+                    servo_output[7] = angle;
+                    
+                    break;
+                }
+                case 2: // throttle
+                {
+                    
+                    uint16_t throttle = rc_input[chan];
+                    uint16_t throttle_avg;
+                    
+                    throttle = constrain(throttle, 1130, 1890);
+                    throttle = map(throttle, 1130, 1890, 1200, 2000);
+                    
+                    for (uint8_t i = 0; i < THROTTLE_RC_FILTER_COUNT; i++) {
+                        throttle_avg += throttle_stab[i];
+                        if (i < 4) {
+                            throttle_stab[i] = throttle_stab[i+1];
+                        }
+                        else {
+                            throttle_stab[i] = throttle;
+                        }
+                    }
+                    
+                    throttle = round(throttle_avg / (float)THROTTLE_RC_FILTER_COUNT);
+                    
+                    Serial.print("Set throttle to: ");
+                    Serial.println(throttle);
+                    
+                    for (int esc_chan = 0; esc_chan < 4; esc_chan++) {
+                        PulseRadio.outputCh(esc_chan, throttle);
+                        servo_output[esc_chan] = throttle;
+                    }
+                    
+                    break;
+                }
+            }
+        }
     }
-
+    else if (system_info.mode == MAV_MODE_AUTO || system_info.mode == MAV_MODE_GUIDED) {
+        for (int chan = 0; chan < 8; chan++) {
+            PulseRadio.outputCh(chan, servo_output[chan]);
+        }
+    }
 }
 
 /**
@@ -207,6 +318,7 @@ void control_update()
 void mavlink_dispatch(mavlink_message_t &msg) {
     switch (msg.msgid) {
         case MAVLINK_MSG_ID_SET_MODE:
+        {
             mavlink_set_mode_t new_mode;
             mavlink_msg_set_mode_decode(&msg, &new_mode);
             
@@ -215,14 +327,45 @@ void mavlink_dispatch(mavlink_message_t &msg) {
             }
             
             break;
-            
+        }    
         case MAVLINK_MSG_ID_CHANGE_OPERATOR_CONTROL:
+        {
             mavlink_change_operator_control_t change;
             mavlink_msg_change_operator_control_decode(&msg, &change);
             
             break;
-        
+        }
+        case MAVLINK_MSG_ID_ACTION:
+        {
+            mavlink_action_t action;
+            mavlink_msg_action_decode(&msg, &action);
+            
+            switch (action.action) {
+            
+            }
+            
+            break;
+        }
+        case MAVLINK_MSG_ID_MANUAL_CONTROL:
+        {
+            mavlink_manual_control_t ctrl;
+            mavlink_msg_manual_control_decode(&msg, &ctrl);
+            
+            uint16_t thrust = (uint16_t)ctrl.thrust;
+            
+            if (thrust <= 1000) {
+                thrust += 1000;
+                
+                servo_output[0] = thrust;
+                servo_output[1] = thrust;
+                servo_output[2] = thrust;
+                servo_output[3] = thrust;
+            }
+            
+            break;
+        }
         case MAVLINK_MSG_ID_COMMAND:
+        {
             mavlink_command_t cmd;
             mavlink_msg_command_decode(&msg, &cmd);
           
@@ -249,22 +392,8 @@ void mavlink_dispatch(mavlink_message_t &msg) {
                     uint8_t servo = cmd.param1;
                     uint16_t pos  = cmd.param2;
 
-                    if (servo > 0 && servo < 9 && pos >= 1000 && pos <= 2000) {
-                        switch (servo) {
-                            case 1:
-                                control_output.esc1 = pos;
-                                break;
-                            case 2:
-                                control_output.esc2 = pos;
-                                break;
-                            case 3:
-                                control_output.esc3 = pos;
-                                break;
-                            case 4:
-                                control_output.esc4 = pos;
-                                break;
-                        }
-
+                    if (servo >= 0 && servo < 8 && pos >= 1000 && pos <= 2000) {
+                        servo_output[servo] = pos;
                         mavlink_msg_command_ack_send(MAVLINK_COMM_0, MAV_CMD_DO_SET_SERVO, 0);
                     }
                     else {
@@ -273,7 +402,9 @@ void mavlink_dispatch(mavlink_message_t &msg) {
 
                     break;
                 }
-          }
+            }
             
+            break;
+        }           
     }
 }
