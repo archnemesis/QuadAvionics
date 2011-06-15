@@ -25,4 +25,13 @@
 
 #define THROTTLE_RC_FILTER_COUNT 10
 
+#define BATT1_VOLTAGE_PIN   0
+#define BATT1_CURRENT_PIN   1
+#define BATT2_VOLTAGE_PIN   2
+#define BATT2_CURRENT_PIN   3
+#define BATT3_VOLTAGE_PIN   4
+#define BATT3_CURRENT_PIN   5
+#define BATT4_VOLTAGE_PIN   6
+#define BATT4_CURRENT_PIN   7
+
 #endif

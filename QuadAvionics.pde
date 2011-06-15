@@ -17,6 +17,11 @@ struct _system_info_t {
     float       batt3_voltage;
     float       batt4_voltage;
     
+    float       batt1_current;
+    float       batt2_current;
+    float       batt3_current;
+    float       batt4_current;
+    
     float       batt1_charge;
     float       batt2_charge;
     float       batt3_charge;
@@ -73,6 +78,13 @@ void setup()
     loop_counters.medium_delta      = 0;
     loop_counters.medium_counter    = 0;
     loop_counters.onehz_counter     = 0;
+    
+    rc_input_min[0] = 1260;
+    rc_input_max[0] = 1800;
+    rc_input_min[1] = 1160;
+    rc_input_max[1] = 1900;
+    rc_input_min[2] = 1130;
+    rc_input_max[2] = 1890;
     
     servo_output[0] = 1000;
     servo_output[1] = 1000;
@@ -146,39 +158,21 @@ void medium_loop()
         {
             loop_counters.medium_counter++;
             
-            //mavlink_msg_servo_output_raw_send(
-            //    MAVLINK_COMM_0,
-            //    control_output.esc1,
-            //    control_output.esc2,
-            //    control_output.esc3,
-            //    control_output.esc4,
-            //    0,
-            //    0,
-            //    0,
-            //    0
-            //);
+            //
+            // Read battery voltage and current draw
+            //
+            float b1_voltage_raw = (((analogRead(BATT1_VOLTAGE_PIN) / 1024.0f) * 5.0f) / 0.06369f) * 1000.0f;
+            float b1_current_raw = (((analogRead(BATT1_CURRENT_PIN) / 1024.0f) * 5.0f) / 0.03660f) * 1000.0f;
             
-            int b1_analog = analogRead(0);
-            float b1_volt_raw = (((b1_analog / 1024.0f) * 5.0f) / 0.06369f) * 1000.0f;
-            
-            b1_analog = analogRead(1);
-            float bi_current_raw = (((b1_analog / 1024.0f) * 5.0f) / 0.03660f) * 1000.0f;
-            
-            Serial.println(bi_current_raw / 1000);
-            
-            system_info.batt1_voltage = int(b1_volt_raw);
-            system_info.batt1_charge = map(b1_volt_raw, 8100, 12690, 0, 100);
+            system_info.batt1_voltage = int(b1_voltage_raw);
+            system_info.batt1_current = int(b1_current_raw);
+            system_info.batt1_charge  = map(b1_volt_raw, 8100, 12690, 0, 100);
             
             break;
         }    
         case 1:
+        {
             loop_counters.medium_counter++;
-
-            control_update();
-            
-            break;
-        case 2:
-            loop_counters.medium_counter = 0;
             
             if (PulseRadio.ready()) {
                 for (int i = 0; i < 8; i++) {
@@ -187,6 +181,15 @@ void medium_loop()
             }
             
             break;
+        }
+        case 2:
+        {
+            loop_counters.medium_counter = 0;
+
+            control_update();
+            
+            break;
+        }
     }
 }
 
@@ -201,6 +204,7 @@ void one_second_loop()
 
     if (millis() > 5000) {
         mavlink_msg_heartbeat_send(MAVLINK_COMM_0, MAV_QUADROTOR, MAV_AUTOPILOT_GENERIC);
+        
         mavlink_msg_sys_status_send(
             MAVLINK_COMM_0, 
             system_info.mode, 
@@ -211,6 +215,7 @@ void one_second_loop()
             system_info.batt1_charge,
             system_info.packet_loss
         );
+        
         mavlink_msg_servo_output_raw_send(
             MAVLINK_COMM_0,
             servo_output[0],
@@ -222,6 +227,7 @@ void one_second_loop()
             servo_output[6],
             servo_output[7]
         );
+        
         mavlink_msg_rc_channels_raw_send(
             MAVLINK_COMM_0,
             rc_input[0],
@@ -248,8 +254,8 @@ void control_update()
                 case 0: // forward/aft thruster tilt
                 {
                     uint16_t angle = rc_input[chan];
-                    angle = constrain(angle, 1260, 1800);
-                    angle = map(angle, 1260, 1800, 1000, 2000);
+                    angle = constrain(angle, rc_input_min[chan], rc_input_max[chan]);
+                    angle = map(angle, rc_input_min[chan], rc_input_max[chan], 1000, 2000);
                     
                     PulseRadio.outputCh(4, angle);
                     PulseRadio.outputCh(5, angle);
@@ -261,8 +267,8 @@ void control_update()
                 case 1: // left/riht thruster tilt
                 {
                     uint16_t angle = rc_input[chan];
-                    angle = constrain(angle, 1160, 1900);
-                    angle = map(angle, 1160, 1900, 1000, 2000);
+                    angle = constrain(angle, rc_input_min[chan], rc_input_max[chan]);
+                    angle = map(angle, rc_input_min[chan], rc_input_max[chan], 1000, 2000);
                     
                     PulseRadio.outputCh(6, angle);
                     PulseRadio.outputCh(7, angle);
@@ -277,8 +283,8 @@ void control_update()
                     uint16_t throttle = rc_input[chan];
                     uint16_t throttle_avg;
                     
-                    throttle = constrain(throttle, 1130, 1890);
-                    throttle = map(throttle, 1130, 1890, 1200, 2000);
+                    throttle = constrain(throttle, rc_input_min[chan], rc_input_max[chan]);
+                    throttle = map(throttle, rc_input_min[chan], rc_input_max[chan], 1000, 2000);
                     
                     for (uint8_t i = 0; i < THROTTLE_RC_FILTER_COUNT; i++) {
                         throttle_avg += throttle_stab[i];
