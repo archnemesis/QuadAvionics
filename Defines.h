@@ -34,4 +34,16 @@
 #define BATT4_VOLTAGE_PIN   6
 #define BATT4_CURRENT_PIN   7
 
+#define P_SERVO 1
+#define P_MOTOR 2
+
+#define K_TRIM_CHANNEL_1 1
+#define K_TRIM_CHANNEL_2 2
+#define K_TRIM_CHANNEL_3 3
+#define K_TRIM_CHANNEL_4 4
+#define K_TRIM_CHANNEL_5 5
+#define K_TRIM_CHANNEL_6 6
+#define K_TRIM_CHANNEL_7 7
+#define K_TRIM_CHANNEL_8 8
+
 #endif

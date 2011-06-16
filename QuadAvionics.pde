@@ -48,6 +48,7 @@ uint16_t rc_input_max[8];
 uint16_t rc_input[8];
 
 uint16_t servo_output[8];
+int servo_output_trim[8];
 
 //
 // outputs for main rotor speed controllers
@@ -94,6 +95,15 @@ void setup()
     servo_output[5] = 1500;
     servo_output[6] = 1500;
     servo_output[7] = 1500;
+    
+    servo_output_trim[0] = 0;
+    servo_output_trim[1] = 0;
+    servo_output_trim[2] = 0;
+    servo_output_trim[3] = 0;
+    servo_output_trim[4] = 0;
+    servo_output_trim[5] = 0;
+    servo_output_trim[6] = 0;
+    servo_output_trim[7] = 0;
     
     PulseRadio.init();
     
@@ -373,6 +383,45 @@ void mavlink_dispatch(mavlink_message_t &msg) {
                 servo_output[1] = thrust;
                 servo_output[2] = thrust;
                 servo_output[3] = thrust;
+            }
+            
+            break;
+        }
+        case MAVLINK_MSG_ID_PARAM_SET:
+        {
+            mavlink_param_set_t pset;
+            mavlink_msg_param_set_decode(&msg, &cmd);
+            
+            switch (pset.param_id[0]) {
+                case P_SERVO:
+                    switch (pset.param_id[1]) {
+                        case K_TRIM_CHANNEL_1:
+                            servo_output_trim[0] = (int)pset.param_value;
+                            break;
+                        case K_TRIM_CHANNEL_2:
+                            servo_output_trim[1] = (int)pset.param_value;
+                            break;
+                        case K_TRIM_CHANNEL_3:
+                            servo_output_trim[2] = (int)pset.param_value;
+                            break;
+                        case K_TRIM_CHANNEL_4:
+                            servo_output_trim[3] = (int)pset.param_value;
+                            break;
+                        case K_TRIM_CHANNEL_5:
+                            servo_output_trim[4] = (int)pset.param_value;
+                            break;
+                        case K_TRIM_CHANNEL_6:
+                            servo_output_trim[5] = (int)pset.param_value;
+                            break;
+                        case K_TRIM_CHANNEL_7:
+                            servo_output_trim[6] = (int)pset.param_value;
+                            break;
+                        case K_TRIM_CHANNEL_8:
+                            servo_output_trim[7] = (int)pset.param_value;
+                            break;
+                    }
+                    
+                    break;
             }
             
             break;
