@@ -79,10 +79,10 @@ void setup()
     loop_counters.medium_counter    = 0;
     loop_counters.onehz_counter     = 0;
     
-    rc_input_min[0] = 1260;
-    rc_input_max[0] = 1800;
-    rc_input_min[1] = 1160;
-    rc_input_max[1] = 1900;
+    rc_input_min[0] = 1300;
+    rc_input_max[0] = 1857;
+    rc_input_min[1] = 1157;
+    rc_input_max[1] = 1915;
     rc_input_min[2] = 1130;
     rc_input_max[2] = 1890;
     
@@ -166,7 +166,7 @@ void medium_loop()
             
             system_info.batt1_voltage = int(b1_voltage_raw);
             system_info.batt1_current = int(b1_current_raw);
-            system_info.batt1_charge  = map(b1_volt_raw, 8100, 12690, 0, 100);
+            system_info.batt1_charge  = map(b1_voltage_raw, 8100, 12690, 0, 100);
             
             break;
         }    
@@ -258,9 +258,11 @@ void control_update()
                     angle = map(angle, rc_input_min[chan], rc_input_max[chan], 1000, 2000);
                     
                     PulseRadio.outputCh(4, angle);
-                    PulseRadio.outputCh(5, angle);
                     servo_output[4] = angle;
-                    servo_output[5] = angle;
+                    
+                    angle = map(angle, 1000, 2000, 2000, 1000);
+                    PulseRadio.outputCh(6, angle);
+                    servo_output[6] = angle;
                     
                     break;
                 }
@@ -270,9 +272,9 @@ void control_update()
                     angle = constrain(angle, rc_input_min[chan], rc_input_max[chan]);
                     angle = map(angle, rc_input_min[chan], rc_input_max[chan], 1000, 2000);
                     
-                    PulseRadio.outputCh(6, angle);
+                    PulseRadio.outputCh(5, angle);
                     PulseRadio.outputCh(7, angle);
-                    servo_output[6] = angle;
+                    servo_output[5] = angle;
                     servo_output[7] = angle;
                     
                     break;
