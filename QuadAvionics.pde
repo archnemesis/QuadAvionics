@@ -51,6 +51,12 @@ uint16_t servo_output[8];
 int servo_output_trim[8];
 
 //
+// for CLI processing
+//
+
+String command;
+
+//
 // outputs for main rotor speed controllers
 //
 //Servo esc_servo[4];
@@ -82,8 +88,8 @@ void setup()
     
     rc_input_min[0] = 1300;
     rc_input_max[0] = 1857;
-    rc_input_min[1] = 1157;
-    rc_input_max[1] = 1915;
+    rc_input_min[1] = 1142;
+    rc_input_max[1] = 1899;
     rc_input_min[2] = 1130;
     rc_input_max[2] = 1890;
     
@@ -194,6 +200,21 @@ void medium_loop()
         }
         case 2:
         {
+            loop_counters.medium_counter++;
+            
+            if (Serial.available() > 0) {
+                uint8_t c = Serial.read();
+                if (c == '\n') {
+                    cli_execute(command);
+                    command = String();
+                }
+                else {
+                    command.append(c);
+                }
+            }
+        }
+        case 3:
+        {
             loop_counters.medium_counter = 0;
 
             control_update();
@@ -250,6 +271,25 @@ void one_second_loop()
             rc_input[7],
             0
         );
+        
+        mavlink_msg_power_status_send(
+            MAVLINK_COMM_0,
+            system_info.batt1_voltage,
+            system_info.batt2_voltage,
+            system_info.batt3_voltage,
+            system_info.batt4_voltage,
+            system_info.batt1_current,
+            system_info.batt2_current,
+            system_info.batt3_current,
+            system_info.batt4_current
+        );
+    }
+}
+
+void cli_update()
+{
+    while (Serial.available() > 0) {
+        uint8_t
     }
 }
 
@@ -257,6 +297,9 @@ void control_update()
 {
     static uint16_t throttle_stab[THROTTLE_RC_FILTER_COUNT];
     static uint8_t throttle_stab_counter = 0;
+    
+    static uint16_t throttle_filter_strength = 5;
+    static uint16_t throttle_filter_sum = throttle_filter_strength * rc_input_min[2];
     
     if (system_info.mode == MAV_MODE_MANUAL) {
         for (int chan = 0; chan < 8; chan++) {
@@ -267,11 +310,11 @@ void control_update()
                     angle = constrain(angle, rc_input_min[chan], rc_input_max[chan]);
                     angle = map(angle, rc_input_min[chan], rc_input_max[chan], 1000, 2000);
                     
-                    PulseRadio.outputCh(4, angle);
+                    PulseRadio.outputCh(4, angle + servo_output_trim[4]);
                     servo_output[4] = angle;
                     
                     angle = map(angle, 1000, 2000, 2000, 1000);
-                    PulseRadio.outputCh(6, angle);
+                    PulseRadio.outputCh(6, angle + servo_output_trim[6]);
                     servo_output[6] = angle;
                     
                     break;
@@ -282,9 +325,11 @@ void control_update()
                     angle = constrain(angle, rc_input_min[chan], rc_input_max[chan]);
                     angle = map(angle, rc_input_min[chan], rc_input_max[chan], 1000, 2000);
                     
-                    PulseRadio.outputCh(5, angle);
-                    PulseRadio.outputCh(7, angle);
+                    PulseRadio.outputCh(5, angle + servo_output_trim[5]);
                     servo_output[5] = angle;
+                    
+                    angle = map(angle, 1000, 2000, 2000, 1000);
+                    PulseRadio.outputCh(7, angle + servo_output_trim[7]);
                     servo_output[7] = angle;
                     
                     break;
@@ -292,11 +337,14 @@ void control_update()
                 case 2: // throttle
                 {
                     
-                    uint16_t throttle = rc_input[chan];
+                    uint16_t throttle_raw = rc_input[chan];
                     uint16_t throttle_avg;
                     
-                    throttle = constrain(throttle, rc_input_min[chan], rc_input_max[chan]);
-                    throttle = map(throttle, rc_input_min[chan], rc_input_max[chan], 1000, 2000);
+                    throttle_raw = constrain(throttle_raw, rc_input_min[chan], rc_input_max[chan]);
+                    throttle_raw = map(throttle_raw, rc_input_min[chan], rc_input_max[chan], 1000, 1900);
+                    
+                    throttle_filter_sum = throttle_filter_sum - throttle_filter_value + throttle_raw;
+                    throttle_filter_value = throttle_filter_sum >> throttle_filter_strength;
                     
                     for (uint8_t i = 0; i < THROTTLE_RC_FILTER_COUNT; i++) {
                         throttle_avg += throttle_stab[i];
@@ -311,7 +359,7 @@ void control_update()
                     throttle = round(throttle_avg / (float)THROTTLE_RC_FILTER_COUNT);
                     
                     for (int esc_chan = 0; esc_chan < 4; esc_chan++) {
-                        PulseRadio.outputCh(esc_chan, throttle);
+                        PulseRadio.outputCh(esc_chan, throttle + servo_output_trim[esc_chan]);
                         servo_output[esc_chan] = throttle;
                     }
                     
@@ -330,7 +378,7 @@ void control_update()
     }
     else if (system_info.mode == MAV_MODE_AUTO || system_info.mode == MAV_MODE_GUIDED) {
         for (int chan = 0; chan < 8; chan++) {
-            PulseRadio.outputCh(chan, servo_output[chan]);
+            PulseRadio.outputCh(chan, servo_output[chan] + servo_output_trim[chan]);
         }
     }
 }
@@ -390,7 +438,7 @@ void mavlink_dispatch(mavlink_message_t &msg) {
         case MAVLINK_MSG_ID_PARAM_SET:
         {
             mavlink_param_set_t pset;
-            mavlink_msg_param_set_decode(&msg, &cmd);
+            mavlink_msg_param_set_decode(&msg, &pset);
             
             switch (pset.param_id[0]) {
                 case P_SERVO:

@@ -4,7 +4,7 @@
 
 volatile unsigned int ICR4_old;
 volatile unsigned char ppm_counter = 0;
-volatile uint16_t pwm_raw[8] = {2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400};
+volatile uint16_t pwm_raw[8] = {2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000};
 volatile unsigned char radio_status = 0;
 
 ISR(TIMER4_CAPT_vect)
